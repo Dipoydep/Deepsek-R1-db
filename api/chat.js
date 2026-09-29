@@ -14,17 +14,15 @@ export default async function handler(req, res) {
   }
 
   try {
-    // URL Base Endpoint XyloAPI (diambil dari Environment Variable Vercel atau fallback default)
     const baseUrl = process.env.CUSTOM_ENDPOINT || 'https://xyloapi.qzz.io/api/ai-chat/deepseek-r1';
 
-    // 3. Sisipkan System Prompt Paksa Bahasa Indonesia ke dalam teks user
-    const fullPrompt = `System instructions: Kamu adalah AI asisten yang cerdas. Kamu WAJIB berpikir (reasoning) dan memberikan jawaban akhir SELALU dalam Bahasa Indonesia, dan jago dalam death battle.\n\nUser request: ${message}`;
+    // 3. Sisipkan System Prompt Paksa Bahasa Indonesia
+    const fullPrompt = `System instructions: Kamu adalah AI asisten yang cerdas. Kamu WAJIB berpikir (reasoning) dan memberikan jawaban akhir SELALU dalam Bahasa Indonesia.\n\nUser request: ${message}`;
 
-    // 4. Susun URL GET dengan parameter ?prompt=...
     const targetUrl = new URL(baseUrl);
     targetUrl.searchParams.append('prompt', fullPrompt);
 
-    // 5. Tembak ke XyloAPI via HTTP GET
+    // 4. Tembak ke XyloAPI via HTTP GET
     const response = await fetch(targetUrl.toString(), {
       method: 'GET',
       headers: {
@@ -34,10 +32,21 @@ export default async function handler(req, res) {
 
     const data = await response.json();
 
-    // 6. Kembalikan response hasil dari XyloAPI ke client
+    // 5. Ekstrak jawaban teks bersih dari objek XyloAPI
+    // Mengantisipasi berbagai kemungkinan struktur properti dari provider (result, message, output, response, dll)
+    const replyText = 
+      (typeof data === 'string' ? data : null) ||
+      data.result || 
+      data.response || 
+      data.message || 
+      data.data || 
+      data.output ||
+      JSON.stringify(data);
+
+    // 6. Kembalikan balasan berupa teks bersih
     return res.status(200).json({
       success: true,
-      data: data
+      result: replyText
     });
   } catch (error) {
     return res.status(500).json({
