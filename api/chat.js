@@ -11,8 +11,6 @@ export default async function handler(req, res) {
 
   try {
     const baseUrl = process.env.CUSTOM_ENDPOINT || 'https://xyloapi.qzz.io/api/ai-chat/deepseek-r1';
-    
-    // System prompt ketat agar reasoning juga diarahkan ke Bahasa Indonesia
     const fullPrompt = `System instructions: Kamu adalah AI asisten yang cerdas. Kamu WAJIB berpikir (reasoning) dan memberikan jawaban akhir SELALU dalam Bahasa Indonesia.\n\nUser request: ${message}`;
 
     const targetUrl = new URL(baseUrl);
@@ -23,37 +21,45 @@ export default async function handler(req, res) {
       headers: { 'Accept': 'application/json' },
     });
 
-    const data = await response.json();
+    let data = await response.json();
 
-    // 1. Ambil teks murni dari properti JSON XyloAPI
-    let rawText = '';
+    // Jika data berupa string JSON, parse sampai jadi Objek murni
     if (typeof data === 'string') {
-      rawText = data;
-    } else if (data && typeof data === 'object') {
-      rawText = data.response || data.result || data.message || data.data || data.output || JSON.stringify(data);
+      try { data = JSON.parse(data); } catch (e) {}
     }
 
-    // Jika rawText masih berformat JSON string, parsing sekali lagi
-    if (typeof rawText === 'string' && rawText.trim().startsWith('{')) {
-      try {
-        const parsed = JSON.parse(rawText);
-        rawText = parsed.response || parsed.result || parsed.message || rawText;
-      } catch (e) {
-        // Biarkan jika gagal parse
+    // Rekursif / Cari properti teks di dalam Objek
+    function findText(obj) {
+      if (typeof obj === 'string') return obj;
+      if (!obj || typeof obj !== 'object') return '';
+      
+      // Prioritas kunci yang sering dipakai API AI
+      const priorityKeys = ['result', 'response', 'message', 'data', 'output', 'text', 'content'];
+      for (const key of priorityKeys) {
+        if (obj[key]) {
+          const found = findText(obj[key]);
+          if (found) return found;
+        }
       }
+
+      // Jika tidak ada di priority keys, ambil value pertama yang bertipe string
+      for (const key in obj) {
+        if (typeof obj[key] === 'string') return obj[key];
+        if (typeof obj[key] === 'object') {
+          const found = findText(obj[key]);
+          if (found) return found;
+        }
+      }
+      return '';
     }
 
-    // 2. Bersihkan tag <think>...</think> milik DeepSeek R1 secara otomatis
-    let cleanText = String(rawText)
-      .replace(/<think>[\s\S]*?<\/think>/gi, '') // Hapus blok reasoning <think>
-      .trim();
+    let rawText = findText(data) || JSON.stringify(data);
 
-    // Fallback jika setelah di-strip teks jadi kosong
-    if (!cleanText) {
-      cleanText = String(rawText);
-    }
+    // Hapus tag <think>...</think> jika ada
+    let cleanText = rawText.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
 
-    // 3. Kirim sebagai Plain Text bersih ke frontend
+    if (!cleanText) cleanText = rawText;
+
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
     return res.status(200).send(cleanText);
 
